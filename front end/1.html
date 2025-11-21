@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VisionX 2025 - Dental AI</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/teachablemachine-image@latest/dist/teachablemachine-image.min.js"></script>
+
+    <style>
+        /* --- CSS: THE LOOK & FEEL --- */
+        body {
+            background-color: #111; /* Dark Mode */
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1 {
+            margin-bottom: 5px;
+            letter-spacing: 2px;
+            color: #00d2ff; /* Medical Cyan */
+            text-transform: uppercase;
+        }
+
+        p { color: #888; margin-bottom: 30px; }
+
+        /* The Camera Container */
+        #webcam-wrapper {
+            position: relative;
+            width: 400px;
+            height: 400px;
+            border: 3px solid #333;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 0 30px rgba(0, 210, 255, 0.2);
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        /* The Scanner Overlay */
+        .scanner-overlay {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 200px; height: 200px;
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            border-radius: 10px;
+            pointer-events: none; /* Let clicks pass through */
+        }
+
+        /* Start Button */
+        button {
+            padding: 15px 40px;
+            font-size: 18px;
+            background-color: #00d2ff;
+            color: #000;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            margin-bottom: 20px;
+            font-weight: bold;
+            transition: transform 0.2s;
+        }
+        button:hover { transform: scale(1.05); }
+
+        /* Results Section */
+        #label-container {
+            margin-top: 20px;
+            width: 400px;
+        }
+
+        .result-bar {
+            background: #222;
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .bar-fill {
+            height: 5px;
+            background: #555;
+            margin-top: 5px;
+            border-radius: 3px;
+            width: 100%;
+        }
+        
+        .fill-level { height: 100%; background: #00d2ff; width: 0%; transition: width 0.2s; }
+        
+        /* Alert Colors */
+        .danger { color: #ff4757; }
+        .safe { color: #2ed573; }
+
+    </style>
+</head>
+<body>
+
+    <h1>VisionX 2025</h1>
+    <p>AI Dental Calculus Detection System</p>
+
+    <button type="button" onclick="init()">Start Camera</button>
+
+    <div id="webcam-wrapper">
+        <div class="scanner-overlay"></div>
+        <div id="webcam-container"></div>
+    </div>
+
+    <div id="label-container"></div>
+
+    <script type="text/javascript">
+        // 🔴 PASTE YOUR LINK HERE 🔴
+        const URL = "https://teachablemachine.withgoogle.com/models/YOUR_MODEL_ID_HERE/";
+
+        let model, webcam, labelContainer, maxPredictions;
+
+        // 1. Initialize the AI
+        async function init() {
+            const modelURL = URL + "model.json";
+            const metadataURL = URL + "metadata.json";
+
+            // Load the model
+            model = await tmImage.load(modelURL, metadataURL);
+            maxPredictions = model.getTotalClasses();
+
+            // Setup the webcam
+            const flip = true; 
+            webcam = new tmImage.Webcam(400, 400, flip); 
+            await webcam.setup(); 
+            await webcam.play();
+            window.requestAnimationFrame(loop);
+
+            // Add webcam to the HTML
+            document.getElementById("webcam-container").appendChild(webcam.canvas);
+            
+            // Create label bars for each class (Healthy / Calculus)
+            labelContainer = document.getElementById("label-container");
+            for (let i = 0; i < maxPredictions; i++) { 
+                // Creating HTML elements dynamically
+                const div = document.createElement("div");
+                div.className = "result-bar";
+                div.innerHTML = `
+                    <div style="width:100%">
+                        <div style="display:flex; justify-content:space-between;">
+                            <span class="label-name">Loading...</span>
+                            <span class="label-score">0%</span>
+                        </div>
+                        <div class="bar-fill"><div class="fill-level"></div></div>
+                    </div>`;
+                labelContainer.appendChild(div);
+            }
+        }
+
+        // 2. The Loop (Runs over and over)
+        async function loop() {
+            webcam.update(); 
+            await predict();
+            window.requestAnimationFrame(loop);
+        }
+
+        // 3. Predict what the camera sees
+        async function predict() {
+            const prediction = await model.predict(webcam.canvas);
+
+            for (let i = 0; i < maxPredictions; i++) {
+                const name = prediction[i].className;
+                const probability = prediction[i].probability.toFixed(2);
+                const percentage = (probability * 100) + "%";
+
+                // Get the HTML elements we created earlier
+                const barContainer = labelContainer.childNodes[i];
+                const nameSpan = barContainer.querySelector(".label-name");
+                const scoreSpan = barContainer.querySelector(".label-score");
+                const fillLevel = barContainer.querySelector(".fill-level");
+
+                // Update text and width
+                nameSpan.innerHTML = name;
+                scoreSpan.innerHTML = percentage;
+                fillLevel.style.width = percentage;
+
+                // Change Color if Calculus is detected high
+                if (name.toLowerCase().includes("calculus") && probability > 0.8) {
+                    fillLevel.style.backgroundColor = "#ff4757"; // Red
+                    nameSpan.classList.add("danger");
+                } else if (name.toLowerCase().includes("healthy")) {
+                    fillLevel.style.backgroundColor = "#2ed573"; // Green
+                    nameSpan.classList.remove("danger");
+                }
+            }
+        }
+    </script>
+</body>
+</html>
